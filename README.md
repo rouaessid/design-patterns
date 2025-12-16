@@ -4,7 +4,8 @@
 
 ## Membres du Groupe
 - Roua Essid
-
+- Nedra Bouzaien 
+- souhaila Baldi 
 ## Technologies Utilisées
 - Langage : Java 17
 - Framework GUI : Swing (Java)
