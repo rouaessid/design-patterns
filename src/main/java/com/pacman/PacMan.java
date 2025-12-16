@@ -1,6 +1,7 @@
 package com.pacman;
 
 import com.pacman.composite.Level;
+import com.pacman.decorator.CharacterDecorator;
 import com.pacman.decorator.ShieldDecorator;
 import com.pacman.factory.EntityFactory;
 import com.pacman.model.Block;
@@ -42,6 +43,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private HashSet<Block> powerFoods;
     private HashSet<Block> ghosts;
     private Block pacman;
+    private GameCharacter renderablePacman; // The top-level decorated character for rendering/updates
     private Level currentLevel;
     private GameState gameState;
     private Random random = new Random();
@@ -133,7 +135,9 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
                     ghost.updateDirection(directions[random.nextInt(4)], walls);
                 } else if (tileMapChar == 'P') {
                     pacman = entityFactory.createPacman(x, y, tileSize, BASE_SPEED);
-                    currentLevel.addEntity(pacman);
+                    pacman.manualMovement = true; // Prevent double movement in update()
+                    renderablePacman = pacman;
+                    currentLevel.addEntity(renderablePacman);
                 } else if (tileMapChar == ' ') {
                     Block food = entityFactory.createFood(x + 14, y + 14);
                     foods.add(food);
@@ -161,6 +165,14 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         pacman.reset();
         pacman.setDirection('R');
         pacman.setImage(pacmanRightImage);
+
+        // Reset decorators on reset
+        if (renderablePacman != pacman) {
+            currentLevel.removeEntity(renderablePacman);
+            renderablePacman = pacman;
+            currentLevel.addEntity(renderablePacman);
+        }
+
         for (Block ghost : ghosts) {
             ghost.reset();
             ghost.updateDirection(directions[random.nextInt(4)], walls);
@@ -168,6 +180,30 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     }
 
     public void move() {
+        // Update the renderable pacman (ticks timers etc)
+        // This will call super.update() which calls pacman.update().
+        // Since pacman.manualMovement is true, pacman.update() won't move x,y,
+        // preventing double movement.
+        renderablePacman.update();
+
+        // Check for expired shield
+        if (renderablePacman instanceof ShieldDecorator) {
+            ShieldDecorator shield = (ShieldDecorator) renderablePacman;
+            if (!shield.isActive()) {
+                currentLevel.removeEntity(renderablePacman);
+                // Unwrap: ideally get the decorated character.
+                // Assuming simple 1-level wrap for now or accessing protected if we made public
+                // getter
+                if (renderablePacman instanceof CharacterDecorator) {
+                    renderablePacman = ((CharacterDecorator) renderablePacman).getDecoratedCharacter();
+                } else {
+                    renderablePacman = pacman; // Fallback
+                }
+                currentLevel.addEntity(renderablePacman);
+                logger.logInfo("Shield expired and removed from level.");
+            }
+        }
+
         // Gestion du mouvement de Pac-Man avec le nouveau système
         pacman.moveWithCollisionCheck(walls);
         updatePacmanImage();
@@ -203,11 +239,19 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
             if (pacman.collision(powerFood)) {
                 powerFoodEaten = powerFood;
                 score += 50;
-                GameCharacter currentCharacter = pacman.getDecoratedCharacter();
-                if (!(currentCharacter instanceof ShieldDecorator)) {
-                    ShieldDecorator shield = new ShieldDecorator(currentCharacter);
-                    pacman.setDecoratedCharacter(shield);
+
+                // Logic to apply shield
+                boolean alreadyShielded = (renderablePacman instanceof ShieldDecorator)
+                        && ((ShieldDecorator) renderablePacman).isActive();
+
+                if (!alreadyShielded) {
+                    // Wrap the CURRENT renderable (could be SpeedBoosted etc)
+                    ShieldDecorator shield = new ShieldDecorator(renderablePacman);
+                    screenSwapPacman(shield);
                     shield.applyEffect();
+                } else {
+                    // Already have shield, just reset duration
+                    ((ShieldDecorator) renderablePacman).applyEffect();
                 }
                 break;
             }
@@ -221,10 +265,15 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         for (Block ghost : ghosts) {
             if (pacman.collision(ghost)) {
                 logger.logCollision("Pacman collided with Ghost.");
-                GameCharacter currentCharacter = pacman.getDecoratedCharacter();
-                if (currentCharacter instanceof ShieldDecorator) {
-                    ((ShieldDecorator) currentCharacter).removeEffect();
-                    pacman.setDecoratedCharacter(pacman);
+
+                ShieldDecorator shield = getActiveShield(renderablePacman);
+
+                if (shield != null) {
+                    shield.removeEffect();
+                    // IMPORTANT: Reset the ghost to prevent immediate re-collision in next frame
+                    ghost.reset();
+                    ghost.updateDirection(directions[random.nextInt(4)], walls);
+                    logger.logInfo("Ghost repelled by shield and reset.");
                 } else {
                     lives -= 1;
                     if (lives == 0) {
@@ -240,6 +289,13 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         if (foods.isEmpty() && powerFoods.isEmpty()) {
             isWin = true;
         }
+    }
+
+    // Helper to swap entities in the level
+    private void screenSwapPacman(GameCharacter newHelper) {
+        currentLevel.removeEntity(renderablePacman);
+        renderablePacman = newHelper;
+        currentLevel.addEntity(renderablePacman);
     }
 
     private void updatePacmanImage() {
@@ -273,7 +329,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     }
 
     public void drawGameElements(Graphics g) {
-        currentLevel.draw(g);
+        currentLevel.draw(g); // Calls draw on renderablePacman (Shield -> Block)
 
         // Dessiner la nourriture
         g.setColor(Color.WHITE);
@@ -383,6 +439,20 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
 
     public HashSet<Block> getPowerFoods() {
         return powerFoods;
+    }
+
+    private ShieldDecorator getActiveShield(GameCharacter character) {
+        GameCharacter current = character;
+        while (current instanceof CharacterDecorator) {
+            if (current instanceof ShieldDecorator) {
+                ShieldDecorator shield = (ShieldDecorator) current;
+                if (shield.isActive()) {
+                    return shield;
+                }
+            }
+            current = ((CharacterDecorator) current).getDecoratedCharacter();
+        }
+        return null;
     }
 
     public void setState(GameState newState) {

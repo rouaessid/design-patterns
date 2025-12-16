@@ -10,6 +10,10 @@ public abstract class CharacterDecorator implements GameCharacter {
         this.decoratedCharacter = decoratedCharacter;
     }
 
+    public GameCharacter getDecoratedCharacter() {
+        return decoratedCharacter;
+    }
+
     @Override
     public void draw(Graphics g) {
         decoratedCharacter.draw(g);

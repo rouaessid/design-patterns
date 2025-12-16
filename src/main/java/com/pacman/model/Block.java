@@ -25,6 +25,10 @@ public class Block implements GameCharacter {
     public int velocityY = 0;
     private int baseSpeed;
 
+    // Flag to control if update() applies movement
+    // Used for Pacman which is moved by specific collision logic in the game loop
+    public boolean manualMovement = false;
+
     // State Pattern
     private CharacterState characterState;
     // Decorator Pattern
@@ -55,9 +59,11 @@ public class Block implements GameCharacter {
     public void update() {
         characterState.update(this);
 
-        // Appliquer le mouvement
-        x += velocityX;
-        y += velocityY;
+        if (!manualMovement) {
+            // Appliquer le mouvement
+            x += velocityX;
+            y += velocityY;
+        }
 
         if (decoratedCharacter != this) {
             decoratedCharacter.update();
@@ -65,10 +71,12 @@ public class Block implements GameCharacter {
     }
 
     @Override
-    public void applyEffect() { }
+    public void applyEffect() {
+    }
 
     @Override
-    public void removeEffect() { }
+    public void removeEffect() {
+    }
 
     @Override
     public int getSpeed() {
