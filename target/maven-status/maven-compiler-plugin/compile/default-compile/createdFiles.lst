@@ -8,6 +8,7 @@ com\pacman\PacMan.class
 com\pacman\state\PlayingState.class
 com\pacman\decorator\SpeedBoostDecorator.class
 com\pacman\App.class
+com\pacman\factory\EntityFactory.class
 com\pacman\state\RunningState.class
 com\pacman\model\Block.class
 com\pacman\state\MenuState.class

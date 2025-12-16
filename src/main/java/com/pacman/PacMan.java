@@ -2,6 +2,7 @@ package com.pacman;
 
 import com.pacman.composite.Level;
 import com.pacman.decorator.ShieldDecorator;
+import com.pacman.factory.EntityFactory;
 import com.pacman.model.Block;
 import com.pacman.model.GameCharacter;
 import com.pacman.state.GameState;
@@ -27,42 +28,15 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private int boardHeight = rowCount * tileSize;
     private final int BASE_SPEED = tileSize / 8;
 
-    private Image wallImage;
-    private Image blueGhostImage;
-    private Image orangeGhostImage;
-    private Image pinkGhostImage;
-    private Image redGhostImage;
-    private Image scaredGhostImage;
-    private Image powerFoodImage;
+    private EntityFactory entityFactory;
     private Image pacmanUpImage;
     private Image pacmanDownImage;
     private Image pacmanLeftImage;
     private Image pacmanRightImage;
+    // Other images are handled by factory for creation, but we keep pacman
+    // directionals for updatePacmanImage
 
-    private String[] tileMap = {
-            "XXXXXXXXXXXXXXXXXXX",
-            "X O      X      O X",
-            "X XX XXX X XXX XX X",
-            "X                 X",
-            "X XX X XXXXX X XX X",
-            "X    X       X    X",
-            "XXXX XXXX XXXX XXXX",
-            "O    X       X    O",
-            "XXXX X XXrXX X XXXX",
-            "       bpo          ",
-            "XXXX X XXXXX X XXXX",
-            "O    X       X    O",
-            "XXXX X XXXXX X XXXX",
-            "X        X        X",
-            "X XX XXX X XXX XX X",
-            "X  X     P     X  X",
-            "XX X X XXXXX X X XX",
-            "X    X   X   X    X",
-            "X XXXXXX X XXXXXX X",
-            "X O               X",
-            "XXXXXXXXXXXXXXXXXXX"
-    };
-
+    private Timer gameLoop;
     private HashSet<Block> walls;
     private HashSet<Block> foods;
     private HashSet<Block> powerFoods;
@@ -70,13 +44,36 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private Block pacman;
     private Level currentLevel;
     private GameState gameState;
-    private Timer gameLoop;
-    private char[] directions = {'U', 'D', 'L', 'R'};
     private Random random = new Random();
-    private int score = 0;
+    private char[] directions = { 'U', 'D', 'L', 'R' };
     private int lives = 3;
+    private int score = 0;
     private boolean isGameOver = false;
     private boolean isWin = false;
+
+    private String[] tileMap = {
+            "XXXXXXXXXXXXXXXXXXX",
+            "XO       X       OX",
+            "X XX XXX X XXX XX X",
+            "X                 X",
+            "X XX X XXXXX X XX X",
+            "X    X       X    X",
+            "XXXX XXXX XXXX XXXX",
+            "XXX  X       X  XXX",
+            "XXXX X XXrXX X XXXX",
+            "X       bpo       X",
+            "XXXX X XXXXX X XXXX",
+            "XXX  X       X  XXX",
+            "XXXX X XXXXX X XXXX",
+            "X        X        X",
+            "X XX XXX X XXX XX X",
+            "X  X     P     X  X",
+            "XX X X XXXXX X X XX",
+            "XO   X   X   X   OX",
+            "X XXXXXX X XXXXXX X",
+            "X                 X",
+            "XXXXXXXXXXXXXXXXXXX"
+    };
 
     public PacMan() {
         setPreferredSize(new Dimension(boardWidth, boardHeight));
@@ -84,7 +81,8 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         addKeyListener(this);
         setFocusable(true);
 
-        loadImages();
+        entityFactory = new EntityFactory();
+        loadImages(); // Only load directional images for Pacman updates
         loadMap();
         setState(new MenuState());
 
@@ -94,14 +92,6 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
 
     private void loadImages() {
         try {
-            wallImage = new ImageIcon(getClass().getResource("/wall.png")).getImage();
-            blueGhostImage = new ImageIcon(getClass().getResource("/blueGhost.png")).getImage();
-            orangeGhostImage = new ImageIcon(getClass().getResource("/orangeGhost.png")).getImage();
-            pinkGhostImage = new ImageIcon(getClass().getResource("/pinkGhost.png")).getImage();
-            redGhostImage = new ImageIcon(getClass().getResource("/redGhost.png")).getImage();
-            scaredGhostImage = new ImageIcon(getClass().getResource("/scaredGhost.png")).getImage();
-            powerFoodImage = new ImageIcon(getClass().getResource("/powerFood.png")).getImage();
-
             pacmanUpImage = new ImageIcon(getClass().getResource("/pacmanUp.png")).getImage();
             pacmanDownImage = new ImageIcon(getClass().getResource("/pacmanDown.png")).getImage();
             pacmanLeftImage = new ImageIcon(getClass().getResource("/pacmanLeft.png")).getImage();
@@ -125,29 +115,31 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
                 int y = r * tileSize;
 
                 if (tileMapChar == 'X') {
-                    Block wall = new Block(wallImage, x, y, tileSize, tileSize, 0);
+                    Block wall = entityFactory.createWall(x, y, tileSize);
                     walls.add(wall);
                     currentLevel.addEntity(wall);
                 } else if (tileMapChar == 'b' || tileMapChar == 'o' || tileMapChar == 'p' || tileMapChar == 'r') {
-                    Image ghostImage = null;
-                    if (tileMapChar == 'b') ghostImage = blueGhostImage;
-                    else if (tileMapChar == 'o') ghostImage = orangeGhostImage;
-                    else if (tileMapChar == 'p') ghostImage = pinkGhostImage;
-                    else if (tileMapChar == 'r') ghostImage = redGhostImage;
+                    String type = "red";
+                    if (tileMapChar == 'b')
+                        type = "blue";
+                    else if (tileMapChar == 'o')
+                        type = "orange";
+                    else if (tileMapChar == 'p')
+                        type = "pink";
 
-                    Block ghost = new Block(ghostImage, x, y, tileSize, tileSize, BASE_SPEED);
+                    Block ghost = entityFactory.createGhost(type, x, y, tileSize, BASE_SPEED);
                     ghosts.add(ghost);
                     currentLevel.addEntity(ghost);
                     ghost.updateDirection(directions[random.nextInt(4)], walls);
                 } else if (tileMapChar == 'P') {
-                    pacman = new Block(pacmanRightImage, x, y, tileSize, tileSize, BASE_SPEED);
+                    pacman = entityFactory.createPacman(x, y, tileSize, BASE_SPEED);
                     currentLevel.addEntity(pacman);
                 } else if (tileMapChar == ' ') {
-                    Block food = new Block(null, x + 14, y + 14, 4, 4, 0);
+                    Block food = entityFactory.createFood(x + 14, y + 14);
                     foods.add(food);
                     currentLevel.addEntity(food);
                 } else if (tileMapChar == 'O') {
-                    Block powerFood = new Block(powerFoodImage, x + 8, y + 8, 16, 16, 0);
+                    Block powerFood = entityFactory.createPowerFood(x + 8, y + 8);
                     powerFoods.add(powerFood);
                     currentLevel.addEntity(powerFood);
                 }
@@ -202,6 +194,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         }
         if (foodEaten != null) {
             foods.remove(foodEaten);
+            currentLevel.removeEntity(foodEaten);
         }
 
         // Collision avec les power-ups
@@ -221,6 +214,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         }
         if (powerFoodEaten != null) {
             powerFoods.remove(powerFoodEaten);
+            currentLevel.removeEntity(powerFoodEaten);
         }
 
         // Collision avec les fantômes
@@ -266,7 +260,8 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     }
 
     private boolean checkWallCollision(Block block) {
-        // Vérifier la collision avec les murs en utilisant une marge pour éviter de se bloquer
+        // Vérifier la collision avec les murs en utilisant une marge pour éviter de se
+        // bloquer
         int margin = 2;
         for (Block wall : walls) {
             if (block.collision(block.x + block.velocityX, block.y + block.velocityY,
@@ -311,7 +306,8 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     }
 
     @Override
-    public void keyTyped(KeyEvent e) {}
+    public void keyTyped(KeyEvent e) {
+    }
 
     @Override
     public void keyPressed(KeyEvent e) {
@@ -337,20 +333,59 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     }
 
     @Override
-    public void keyReleased(KeyEvent e) {}
+    public void keyReleased(KeyEvent e) {
+    }
 
     // Getters
-    public int getBoardWidth() { return boardWidth; }
-    public int getBoardHeight() { return boardHeight; }
-    public int getTileSize() { return tileSize; }
-    public Block getPacman() { return pacman; }
-    public int getScore() { return score; }
-    public int getLives() { return lives; }
-    public boolean isGameOver() { return isGameOver; }
-    public boolean isWin() { return isWin; }
-    public HashSet<Block> getWalls() { return walls; }
-    public HashSet<Block> getFoods() { return foods; }
-    public HashSet<Block> getGhosts() { return ghosts; }
-    public HashSet<Block> getPowerFoods() { return powerFoods; }
-    public void setState(GameState newState) { this.gameState = newState; }
+    public int getBoardWidth() {
+        return boardWidth;
+    }
+
+    public int getBoardHeight() {
+        return boardHeight;
+    }
+
+    public int getTileSize() {
+        return tileSize;
+    }
+
+    public Block getPacman() {
+        return pacman;
+    }
+
+    public int getScore() {
+        return score;
+    }
+
+    public int getLives() {
+        return lives;
+    }
+
+    public boolean isGameOver() {
+        return isGameOver;
+    }
+
+    public boolean isWin() {
+        return isWin;
+    }
+
+    public HashSet<Block> getWalls() {
+        return walls;
+    }
+
+    public HashSet<Block> getFoods() {
+        return foods;
+    }
+
+    public HashSet<Block> getGhosts() {
+        return ghosts;
+    }
+
+    public HashSet<Block> getPowerFoods() {
+        return powerFoods;
+    }
+
+    public void setState(GameState newState) {
+        this.gameState = newState;
+    }
 }
